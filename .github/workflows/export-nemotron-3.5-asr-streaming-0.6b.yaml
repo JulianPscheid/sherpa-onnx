@@ -12,7 +12,8 @@ concurrency:
 
 jobs:
   export-nemotron-3-5-asr-streaming-0-6b-to-onnx:
-    if: github.repository_owner == 'k2-fsa' || github.repository_owner == 'csukuangfj'
+    # VALIDATION-ONLY change (never enters the PR branch): allow fork owner
+    if: github.repository_owner == 'k2-fsa' || github.repository_owner == 'csukuangfj' || github.repository_owner == 'JulianPscheid'
     name: nemotron-3-5-asr-streaming-0-6b-to-onnx
     runs-on: ${{ matrix.os }}
     strategy:
@@ -121,60 +122,15 @@ jobs:
 
           ls -lh *.tar.bz2
 
-      - name: Release
-        uses: svenstaro/upload-release-action@v2
+      # VALIDATION-ONLY (never enters the PR branch): the upstream Release and
+      # Publish-to-huggingface steps are replaced by an artifact upload so the
+      # run works on a fork without secrets. We upload only the chunk sizes
+      # needed for local decode validation.
+      - name: Upload validation artifacts
+        uses: actions/upload-artifact@v4
         with:
-          file_glob: true
-          file: sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-*-int8-2026-06-11.tar.bz2
-          overwrite: true
-          repo_name: k2-fsa/sherpa-onnx
-          repo_token: ${{ secrets.UPLOAD_GH_SHERPA_ONNX_TOKEN }}
-          tag: asr-models
-
-      - name: Publish to huggingface
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        uses: nick-fields/retry@v3
-        with:
-          max_attempts: 20
-          timeout_seconds: 200
-          shell: bash
-          command: |
-            git config --global user.email "csukuangfj@gmail.com"
-            git config --global user.name "Fangjun Kuang"
-
-            models=(
-              sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-80ms-int8-2026-06-11
-              sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-160ms-int8-2026-06-11
-              sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-560ms-int8-2026-06-11
-              sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-1120ms-int8-2026-06-11
-              sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-80ms-2026-06-11
-              sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-160ms-2026-06-11
-              sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-560ms-2026-06-11
-              sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-1120ms-2026-06-11
-            )
-
-            for m in ${models[@]}; do
-              if [ ! -d $m ]; then
-                echo "skip $m"
-                continue
-              fi
-
-              rm -rf huggingface
-              export GIT_LFS_SKIP_SMUDGE=1
-              export GIT_CLONE_PROTECTION_ACTIVE=false
-              git clone https://csukuangfj2:$HF_TOKEN@huggingface.co/csukuangfj2/$m huggingface
-              cp -av $m/* huggingface
-              cd huggingface
-              git lfs track "*.onnx"
-              git lfs track "*.data"
-              git lfs track "*.wav"
-              git status
-              git add .
-              git status
-              git commit -m "first commit"
-              git push https://csukuangfj2:$HF_TOKEN@huggingface.co/csukuangfj2/$m main
-              cd ..
-            done
-
-            rm -rf huggingface
+          name: nemotron-multilingual-validation-int8
+          path: |
+            sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-560ms-int8-2026-06-11.tar.bz2
+            sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-1120ms-int8-2026-06-11.tar.bz2
+          retention-days: 7
