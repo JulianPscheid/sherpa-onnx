@@ -13,6 +13,7 @@
 #include <regex>  // NOLINT
 #include <sstream>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -180,7 +181,9 @@ class OnlineRecognizerTransducerNeMoImpl : public OnlineRecognizerImpl {
 
     auto states = model_->StackStates(std::move(encoder_states));
     int32_t num_states = states.size();  // num_states = 3
-    auto t = model_->RunEncoder(std::move(x), std::move(states));
+    auto language_prompt_ids = GetLanguagePromptIds(ss, n);
+    auto t = model_->RunEncoder(std::move(x), std::move(states),
+                                language_prompt_ids);
     // t[0] encoder_out, float tensor, (batch_size, dim, T)
     // t[1] next states
 
@@ -210,6 +213,29 @@ class OnlineRecognizerTransducerNeMoImpl : public OnlineRecognizerImpl {
   }
 
  private:
+  std::vector<int64_t> GetLanguagePromptIds(OnlineStream **ss,
+                                            int32_t n) const {
+    std::vector<int64_t> ans;
+    if (!model_->IsMultilingual()) {
+      return ans;
+    }
+
+    ans.reserve(n);
+    for (int32_t i = 0; i != n; ++i) {
+      const auto &language = ss[i]->GetOption("language");
+      auto it = language_prompt_cache_.find(ss[i]);
+      if (it == language_prompt_cache_.end() || it->second.first != language) {
+        int64_t prompt_id = model_->GetLanguagePromptId(language);
+        it = language_prompt_cache_
+                 .insert_or_assign(ss[i], std::make_pair(language, prompt_id))
+                 .first;
+      }
+      ans.push_back(it->second.second);
+    }
+
+    return ans;
+  }
+
   void PostInit() {
     config_.feat_config.feature_dim = model_->FeatureDim();
 
@@ -248,6 +274,8 @@ class OnlineRecognizerTransducerNeMoImpl : public OnlineRecognizerImpl {
   std::unique_ptr<OnlineTransducerNeMoModel> model_;
   std::unique_ptr<OnlineTransducerGreedySearchNeMoDecoder> decoder_;
   Endpoint endpoint_;
+  mutable std::unordered_map<OnlineStream *, std::pair<std::string, int64_t>>
+      language_prompt_cache_;
 };
 
 }  // namespace sherpa_onnx
