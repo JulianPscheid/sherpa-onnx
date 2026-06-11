@@ -143,6 +143,91 @@ class TestOnlineRecognizer(unittest.TestCase):
                     print(f"{wave_filename}\n{result}")
                     print("-" * 10)
 
+    def test_nemotron_streaming_english(self):
+        m = "sherpa-onnx-nemotron-speech-streaming-en-0.6b-560ms-int8-2026-04-25"
+        encoder = f"{d}/{m}/encoder.int8.onnx"
+        decoder = f"{d}/{m}/decoder.int8.onnx"
+        joiner = f"{d}/{m}/joiner.int8.onnx"
+        tokens = f"{d}/{m}/tokens.txt"
+        wave0 = f"{d}/{m}/test_wavs/0.wav"
+
+        if not Path(encoder).is_file():
+            print("skipping test_nemotron_streaming_english()")
+            return
+
+        recognizer = sherpa_onnx.OnlineRecognizer.from_transducer(
+            encoder=encoder,
+            decoder=decoder,
+            joiner=joiner,
+            tokens=tokens,
+            num_threads=1,
+            provider="cpu",
+        )
+        s = recognizer.create_stream()
+        samples, sample_rate = read_wave(wave0)
+        s.accept_waveform(sample_rate, samples)
+
+        tail_paddings = np.zeros(int(0.2 * sample_rate), dtype=np.float32)
+        s.accept_waveform(sample_rate, tail_paddings)
+
+        s.input_finished()
+        while recognizer.is_ready(s):
+            recognizer.decode_stream(s)
+        result = recognizer.get_result(s)
+        print(result)
+        self.assertTrue(len(result) > 0)
+
+    def test_nemotron_multilingual_streaming(self):
+        m = "sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-560ms-int8-2026-06-11"
+        encoder = f"{d}/{m}/encoder.int8.onnx"
+        decoder = f"{d}/{m}/decoder.int8.onnx"
+        joiner = f"{d}/{m}/joiner.int8.onnx"
+        tokens = f"{d}/{m}/tokens.txt"
+        wave0 = f"{d}/{m}/test_wavs/ja.wav"
+
+        if not Path(encoder).is_file():
+            print("skipping test_nemotron_multilingual_streaming()")
+            return
+
+        recognizer = sherpa_onnx.OnlineRecognizer.from_transducer(
+            encoder=encoder,
+            decoder=decoder,
+            joiner=joiner,
+            tokens=tokens,
+            num_threads=1,
+            provider="cpu",
+        )
+
+        def decode(language: str = ""):
+            s = recognizer.create_stream()
+            if language:
+                s.set_option("language", language)
+
+            samples, sample_rate = read_wave(wave0)
+            s.accept_waveform(sample_rate, samples)
+
+            tail_paddings = np.zeros(int(0.2 * sample_rate), dtype=np.float32)
+            s.accept_waveform(sample_rate, tail_paddings)
+
+            s.input_finished()
+            while recognizer.is_ready(s):
+                recognizer.decode_stream(s)
+
+            return recognizer.get_result(s)
+
+        ja = decode("ja")
+        auto = decode("auto")
+        unset = decode()
+
+        print(f"ja: {ja}")
+        print(f"auto: {auto}")
+        print(f"unset: {unset}")
+
+        self.assertTrue(len(ja) > 0)
+        self.assertTrue(len(auto) > 0)
+        self.assertTrue(len(unset) > 0)
+        self.assertTrue(any(ord(c) > 127 for c in ja))
+
     def test_zipformer2_ctc(self):
         m = "sherpa-onnx-streaming-zipformer-ctc-multi-zh-hans-2023-12-13"
         for use_int8 in [True, False]:
