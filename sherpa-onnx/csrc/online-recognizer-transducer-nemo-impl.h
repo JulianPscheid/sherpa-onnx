@@ -13,7 +13,6 @@
 #include <regex>  // NOLINT
 #include <sstream>
 #include <string>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -222,15 +221,7 @@ class OnlineRecognizerTransducerNeMoImpl : public OnlineRecognizerImpl {
 
     ans.reserve(n);
     for (int32_t i = 0; i != n; ++i) {
-      const auto &language = ss[i]->GetOption("language");
-      auto it = language_prompt_cache_.find(ss[i]);
-      if (it == language_prompt_cache_.end() || it->second.first != language) {
-        int64_t prompt_id = model_->GetLanguagePromptId(language);
-        it = language_prompt_cache_
-                 .insert_or_assign(ss[i], std::make_pair(language, prompt_id))
-                 .first;
-      }
-      ans.push_back(it->second.second);
+      ans.push_back(model_->GetLanguagePromptId(ss[i]->GetOption("language")));
     }
 
     return ans;
@@ -274,8 +265,6 @@ class OnlineRecognizerTransducerNeMoImpl : public OnlineRecognizerImpl {
   std::unique_ptr<OnlineTransducerNeMoModel> model_;
   std::unique_ptr<OnlineTransducerGreedySearchNeMoDecoder> decoder_;
   Endpoint endpoint_;
-  mutable std::unordered_map<OnlineStream *, std::pair<std::string, int64_t>>
-      language_prompt_cache_;
 };
 
 }  // namespace sherpa_onnx

@@ -67,10 +67,6 @@ class OnlineTransducerNeMoModel {
   std::pair<Ort::Value, std::vector<Ort::Value>> RunDecoder(
       Ort::Value targets, std::vector<Ort::Value> states) const;
 
-  std::pair<Ort::Value, std::vector<Ort::Value>> RunDecoderJoiner(
-      Ort::Value targets, Ort::Value encoder_out,
-      std::vector<Ort::Value> states) const;
-
   std::vector<Ort::Value> GetDecoderInitStates() const;
 
   /** Run the joint network.
@@ -108,8 +104,6 @@ class OnlineTransducerNeMoModel {
   int32_t FeatureDim() const;
 
   bool IsMultilingual() const;
-
-  bool IsDecoderJoinerCombined() const;
 
   int64_t GetLanguagePromptId(const std::string &language) const;
 

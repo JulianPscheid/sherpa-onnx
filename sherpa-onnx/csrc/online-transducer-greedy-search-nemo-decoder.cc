@@ -40,95 +40,9 @@ static std::vector<Ort::Value> BuildStateViews(
   return ans;
 }
 
-static void DecodeOneWithDecoderJoiner(const float *encoder_out,
-                                       int32_t num_rows, int32_t num_cols,
-                                       OnlineTransducerNeMoModel *model,
-                                       float blank_penalty, OnlineStream *s) {
-  auto memory_info =
-      Ort::MemoryInfo::CreateCpu(OrtDeviceAllocator, OrtMemTypeDefault);
-
-  int32_t vocab_size = model->VocabSize();
-  int32_t blank_id = vocab_size - 1;
-
-  auto &r = s->GetResult();
-  int32_t decoder_token = r.tokens.empty() ? blank_id : r.tokens.back();
-
-  std::vector<Ort::Value> &last_decoder_states = s->GetNeMoDecoderStates();
-  std::vector<Ort::Value> decoder_input_states;
-  std::vector<Ort::Value> *current_states = &last_decoder_states;
-
-  std::array<int64_t, 3> encoder_shape{1, num_cols, 1};
-  bool emitted = false;
-  int32_t max_symbols_per_frame = 10;
-
-  Ort::Value decoder_output{nullptr};
-  std::vector<Ort::Value> decoder_output_states;
-
-  for (int32_t t = 0; t != num_rows; ++t) {
-    Ort::Value cur_encoder_out = Ort::Value::CreateTensor(
-        memory_info, const_cast<float *>(encoder_out) + t * num_cols, num_cols,
-        encoder_shape.data(), encoder_shape.size());
-
-    auto decoder_input = BuildDecoderInput(decoder_token, model->Allocator());
-    auto decoder_output_pair = model->RunDecoderJoiner(
-        std::move(decoder_input), View(&cur_encoder_out),
-        BuildStateViews(current_states));
-    decoder_output = std::move(decoder_output_pair.first);
-    decoder_output_states = std::move(decoder_output_pair.second);
-
-    for (int32_t q = 0; q != max_symbols_per_frame; ++q) {
-      float *p_logit = decoder_output.GetTensorMutableData<float>();
-      if (blank_penalty > 0) {
-        p_logit[blank_id] -= blank_penalty;
-      }
-
-      int32_t y = MaxElementIndex(p_logit, vocab_size);
-
-      if (y != blank_id) {
-        emitted = true;
-        r.tokens.push_back(y);
-        r.timestamps.push_back(t + r.frame_offset);
-        r.num_trailing_blanks = 0;
-
-        decoder_token = y;
-        decoder_input_states = std::move(decoder_output_states);
-        current_states = &decoder_input_states;
-
-        decoder_input = BuildDecoderInput(decoder_token, model->Allocator());
-        decoder_output_pair = model->RunDecoderJoiner(
-            std::move(decoder_input), View(&cur_encoder_out),
-            BuildStateViews(current_states));
-        decoder_output = std::move(decoder_output_pair.first);
-        decoder_output_states = std::move(decoder_output_pair.second);
-      } else {
-        ++r.num_trailing_blanks;
-        break;
-      }
-    }
-  }
-
-  if (emitted) {
-    s->SetNeMoDecoderStates(std::move(decoder_output_states));
-  }
-
-  r.frame_offset += num_rows;
-}
-
 static void DecodeOne(const float *encoder_out, int32_t num_rows,
                       int32_t num_cols, OnlineTransducerNeMoModel *model,
                       float blank_penalty, OnlineStream *s) {
-  if (model->IsDecoderJoinerCombined()) {
-    try {
-      DecodeOneWithDecoderJoiner(encoder_out, num_rows, num_cols, model,
-                                 blank_penalty, s);
-    } catch (const Ort::Exception &e) {
-      SHERPA_ONNX_LOGE("Failed to decode with NeMo decoder-joint: %s",
-                       e.what());
-      SHERPA_ONNX_EXIT(-1);
-    }
-    return;
-  }
-
   auto memory_info =
       Ort::MemoryInfo::CreateCpu(OrtDeviceAllocator, OrtMemTypeDefault);
 
